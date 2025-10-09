@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 pub use sgp4::Elements;
 use std::time::Duration;
-
+pub mod doppler;
 use chrono::{DateTime, Utc};
 use predict_rs::{
     consts::{DEG_TO_RAD, RAD_TO_DEG},
