@@ -45,34 +45,66 @@ pub fn descargar_frecuencias_satnogs(norad_id: u32) -> io::Result<SatelliteFrequ
 
 /// Parser simple de JSON de SatNOGS
 fn parse_satnogs_json(json: &str, norad_id: u32) -> io::Result<SatelliteFrequencies> {
-    // Buscar "description", "downlink_low", "uplink_low", "mode"
-    let mut description = String::new();
-    let mut downlink_hz = None;
-    let mut uplink_hz = None;
-    let mut mode = String::from("Unknown");
+    // Buscar el primer objeto con "downlink_low" válido
+    // JSON de SatNOGS viene en una sola línea, así que buscamos patrones
 
-    // Parser simple línea por línea
-    for line in json.lines() {
-        let line = line.trim();
-
-        if line.contains("\"description\":") {
-            if let Some(value) = extract_json_string(line) {
-                description = value;
-            }
-        } else if line.contains("\"downlink_low\":") {
-            if let Some(value) = extract_json_number(line) {
-                downlink_hz = Some(value);
-            }
-        } else if line.contains("\"uplink_low\":") {
-            if let Some(value) = extract_json_number(line) {
-                uplink_hz = Some(value);
-            }
-        } else if line.contains("\"mode\":") {
-            if let Some(value) = extract_json_string(line) {
-                mode = value;
-            }
+    // Extraer descripción del primer transmisor
+    let description = if let Some(desc_start) = json.find("\"description\":\"") {
+        let desc_start = desc_start + 15; // Saltar "description":"
+        if let Some(desc_end) = json[desc_start..].find('\"') {
+            json[desc_start..desc_start + desc_end].to_string()
+        } else {
+            String::new()
         }
-    }
+    } else {
+        String::new()
+    };
+
+    // Buscar downlink_low (primer valor no nulo)
+    let downlink_hz = if let Some(down_start) = json.find("\"downlink_low\":") {
+        let down_start = down_start + 15; // Saltar "downlink_low":
+        if let Some(comma_pos) = json[down_start..].find(',') {
+            let num_str = json[down_start..down_start + comma_pos].trim();
+            if num_str != "null" {
+                num_str.parse::<f64>().ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Buscar uplink_low
+    let uplink_hz = if let Some(up_start) = json.find("\"uplink_low\":") {
+        let up_start = up_start + 13; // Saltar "uplink_low":
+        if let Some(comma_pos) = json[up_start..].find(',') {
+            let num_str = json[up_start..up_start + comma_pos].trim();
+            if num_str != "null" {
+                num_str.parse::<f64>().ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Buscar mode
+    let mode = if let Some(mode_start) = json.find("\"mode\":\"") {
+        let mode_start = mode_start + 8; // Saltar "mode":"
+        if let Some(mode_end) = json[mode_start..].find('\"') {
+            json[mode_start..mode_start + mode_end].to_string()
+        } else {
+            String::from("Unknown")
+        }
+    } else {
+        String::from("Unknown")
+    };
 
     let downlink = downlink_hz.ok_or_else(|| {
         io::Error::new(
@@ -88,29 +120,6 @@ fn parse_satnogs_json(json: &str, norad_id: u32) -> io::Result<SatelliteFrequenc
         uplink_hz,
         mode,
     })
-}
-
-fn extract_json_string(line: &str) -> Option<String> {
-    let parts: Vec<&str> = line.split('"').collect();
-    if parts.len() >= 4 {
-        Some(parts[3].to_string())
-    } else {
-        None
-    }
-}
-
-fn extract_json_number(line: &str) -> Option<f64> {
-    let parts: Vec<&str> = line.split(':').collect();
-    if parts.len() >= 2 {
-        let num_str = parts[1].trim().trim_end_matches(',');
-        if num_str == "null" {
-            None
-        } else {
-            num_str.parse::<f64>().ok()
-        }
-    } else {
-        None
-    }
 }
 
 /// Base de datos local de satélites con sus frecuencias (fallback)
