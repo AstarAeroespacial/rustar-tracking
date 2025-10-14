@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 pub use sgp4::Elements;
 use std::time::Duration;
 pub mod doppler;
+pub mod frequencies;
+pub mod tle_loader;
+pub mod validaciones;
 use chrono::{DateTime, Utc};
 use predict_rs::{
     consts::{DEG_TO_RAD, RAD_TO_DEG},
@@ -63,7 +66,11 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    /// Create a new tracker given the observer and the satellite's orbital elements.
+    /// Create a new tracker given the observer and satellite's orbital elements.
+    ///
+    /// # Arguments
+    /// * `observer` - The ground station location
+    /// * `elements` - The satellite's TLE orbital elements
     pub fn new(observer: &Observer, elements: sgp4::Elements) -> Result<Self, TrackerError> {
         let constants =
             sgp4::Constants::from_elements(&elements).map_err(TrackerError::ElementsError)?;
@@ -83,7 +90,13 @@ impl Tracker {
         })
     }
 
-    /// Predict the observation of the satellite at a given time.
+    /// Predict the observation of the satellite at a given time (azimuth and elevation only).
+    ///
+    /// # Arguments
+    /// * `at` - The time at which to predict the observation
+    ///
+    /// # Returns
+    /// An `Observation` with azimuth and elevation.
     pub fn track(&self, at: DateTime<Utc>) -> Result<Observation, TrackerError> {
         let orbit = orbit::predict_orbit(&self.elements, &self.constants, at.timestamp() as f64)
             .map_err(TrackerError::OrbitPredictionError)?;
