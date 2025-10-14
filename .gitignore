@@ -1,2 +1,16 @@
+# Rust build artifacts
 **/target
 **/Cargo.lock
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Archivos temporales en raíz (deben estar en validacion_doppler/)
+/*.txt
+/*.csv
+/*.png
+
+# Mantener resultados de validaciones de doppler
+validacion_doppler
