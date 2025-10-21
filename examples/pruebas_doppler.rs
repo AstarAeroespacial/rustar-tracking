@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
-use predict_rs::predict::PredictObserver;
+use predict_rs::{observer::predict_observe_orbit, orbit::predict_orbit, predict::PredictObserver};
 use sgp4::{Constants, Elements};
-use tracking::doppler::calcular_doppler;
+use tracking::doppler_downlink;
 use tracking::{frequencies, tle_loader};
 
 fn main() {
@@ -54,15 +54,20 @@ fn main() {
     let mut shifts = Vec::new();
 
     for i in 0..10 {
-        if let Some(shift) =
-            calcular_doppler(&observer, &elements, &constants, freq_tx, current_time, 1)
-        {
-            shifts.push(shift);
+        let sat_orbit = predict_orbit(&elements, &constants, current_time.timestamp() as f64).ok();
+        if let Some(orbit) = sat_orbit {
+            let observation = predict_observe_orbit(&observer, &orbit);
+            let range_rate = observation.range_rate * 1000.0; // km/s to m/s
+            let freq_rx = doppler_downlink(freq_tx, range_rate);
+            let doppler_shift = freq_rx - freq_tx;
+
+            shifts.push(doppler_shift);
             println!(
-                "T+{:2} min | {:19} | Doppler: {:+8.1} Hz",
+                "T+{:2} min | {:19} | Doppler: {:+8.1} Hz | RX: {:.3} MHz",
                 i,
                 current_time.format("%Y-%m-%d %H:%M:%S"),
-                shift
+                doppler_shift,
+                freq_rx / 1_000_000.0
             );
         }
         current_time += Duration::minutes(1);
@@ -84,13 +89,19 @@ fn main() {
     ];
 
     for (band, freq) in freq_bands {
-        if let Some(shift) = calcular_doppler(&observer, &elements, &constants, freq, when, 1) {
+        let sat_orbit = predict_orbit(&elements, &constants, when.timestamp() as f64).ok();
+        if let Some(orbit) = sat_orbit {
+            let observation = predict_observe_orbit(&observer, &orbit);
+            let range_rate = observation.range_rate * 1000.0; // km/s to m/s
+            let freq_rx = doppler_downlink(freq, range_rate);
+            let doppler_shift = freq_rx - freq;
+
             println!(
                 "{:8} ({:9.1} MHz) | Doppler: {:+10.1} Hz | Ratio: {:.1}%",
                 band,
                 freq / 1_000_000.0,
-                shift,
-                (shift / freq) * 100.0
+                doppler_shift,
+                (doppler_shift / freq) * 100.0
             );
         }
     }
@@ -99,10 +110,15 @@ fn main() {
     println!("{}", "-".repeat(50));
 
     let freq_test = 437_500_000.0;
-    for dt in [1, 5, 10, 30, 60] {
-        if let Some(shift) = calcular_doppler(&observer, &elements, &constants, freq_test, when, dt)
-        {
-            println!("dt = {:3} seg | Doppler: {:+8.1} Hz", dt, shift);
+    for _dt in [1, 5, 10, 30, 60] {
+        let sat_orbit = predict_orbit(&elements, &constants, when.timestamp() as f64).ok();
+        if let Some(orbit) = sat_orbit {
+            let observation = predict_observe_orbit(&observer, &orbit);
+            let range_rate = observation.range_rate * 1000.0; // km/s to m/s
+            let freq_rx = doppler_downlink(freq_test, range_rate);
+            let doppler_shift = freq_rx - freq_test;
+
+            println!("Doppler: {:+8.1} Hz", doppler_shift);
         }
     }
 

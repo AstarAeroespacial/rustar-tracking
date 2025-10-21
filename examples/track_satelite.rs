@@ -1,8 +1,8 @@
 use chrono::{Duration, Utc};
-use predict_rs::predict::PredictObserver;
+use predict_rs::{observer::predict_observe_orbit, orbit::predict_orbit, predict::PredictObserver};
 use sgp4::{Constants, Elements};
 use std::fs;
-use tracking::{frequencies, tle_loader};
+use tracking::{doppler_downlink, frequencies, tle_loader};
 
 fn main() {
     println!("=== VALIDACIÓN DOPPLER - SATÉLITE ===\n");
@@ -68,38 +68,19 @@ fn main() {
     for i in 0..total_puntos {
         let t = start_time + Duration::seconds((i * intervalo_segundos) as i64);
 
-        // Calcular observación usando las funciones de doppler
-        let rango_opt = tracking::doppler::calcular_rango(&observer, &elements, &constants, t);
-        let doppler_opt = tracking::doppler::calcular_doppler(
-            &observer, &elements, &constants, freq_hz, t,
-            10, // dt de 10 segundos para calcular range_rate
-        );
+        // Calcular observación usando predict-rs
+        if let Ok(sat_orbit) = predict_orbit(&elements, &constants, t.timestamp() as f64) {
+            let observation = predict_observe_orbit(&observer, &sat_orbit);
 
-        if let (Some(rango_m), Some(doppler_hz)) = (rango_opt, doppler_opt) {
-            // Calcular range rate usando diferencias finitas
-            let dt = Duration::seconds(10);
-            let t2 = t + dt;
+            let rango_m = observation.range * 1000.0; // km to m
+            let range_rate_m_s = observation.range_rate * 1000.0; // km/s to m/s
+            let freq_rx = doppler_downlink(freq_hz, range_rate_m_s);
+            let doppler_hz = freq_rx - freq_hz;
 
-            if let Some(rango2_m) =
-                tracking::doppler::calcular_rango(&observer, &elements, &constants, t2)
-            {
-                let range_rate_m_s = (rango2_m - rango_m) / 10.0;
-
-                // Calcular elevación para el CSV
-                let sat_orbit =
-                    predict_rs::orbit::predict_orbit(&elements, &constants, t.timestamp() as f64);
-
-                if let Ok(orbit) = sat_orbit {
-                    let observation =
-                        predict_rs::observer::predict_observe_orbit(&observer, &orbit);
-                    let elevation_deg = observation.elevation.to_degrees();
-
-                    csv_data.push_str(&format!(
-                        "{},{:.6},{:.6},{:.6},{:.6}\n",
-                        t, rango_m, range_rate_m_s, doppler_hz, elevation_deg
-                    ));
-                }
-            }
+            csv_data.push_str(&format!(
+                "{},{:.6},{:.6},{:.6}\n",
+                t, rango_m, range_rate_m_s, doppler_hz
+            ));
         }
     }
 
