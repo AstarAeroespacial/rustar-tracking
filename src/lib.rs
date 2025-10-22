@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 pub use sgp4::Elements;
 use std::time::Duration;
-pub mod doppler;
 pub mod frequencies;
 pub mod tle_loader;
 pub mod validaciones;
@@ -15,6 +14,9 @@ use predict_rs::{
 
 pub type Degrees = f64;
 pub type Meters = f64;
+
+/// Velocidad de la luz en metros por segundo
+const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Pass {
@@ -50,6 +52,8 @@ pub struct Observation {
     pub azimuth: Degrees,
     /// Elevation, in degrees.
     pub elevation: Degrees,
+    /// Range rate, in meters per second.
+    pub range_rate: f64,
 }
 
 #[derive(Debug)]
@@ -90,13 +94,13 @@ impl Tracker {
         })
     }
 
-    /// Predict the observation of the satellite at a given time (azimuth and elevation only).
+    /// Predict the observation of the satellite at a given time.
     ///
     /// # Arguments
     /// * `at` - The time at which to predict the observation
     ///
     /// # Returns
-    /// An `Observation` with azimuth and elevation.
+    /// An `Observation` with azimuth, elevation, and range rate.
     pub fn track(&self, at: DateTime<Utc>) -> Result<Observation, TrackerError> {
         let orbit = orbit::predict_orbit(&self.elements, &self.constants, at.timestamp() as f64)
             .map_err(TrackerError::OrbitPredictionError)?;
@@ -106,6 +110,7 @@ impl Tracker {
         Ok(Observation {
             azimuth: observation.azimuth * RAD_TO_DEG,
             elevation: observation.elevation * RAD_TO_DEG,
+            range_rate: observation.range_rate * 1000.0, // Convert km/s to m/s
         })
     }
 
@@ -131,41 +136,31 @@ impl Tracker {
     }
 }
 
-pub fn get_next_pass(
-    observer: &Observer,
-    elements: &sgp4::Elements,
-    from: DateTime<Utc>,
-    window: Duration,
-) -> Option<Pass> {
-    let observer = predict_rs::predict::PredictObserver {
-        name: "".to_string(),
-        latitude: observer.latitude * predict_rs::consts::DEG_TO_RAD,
-        longitude: observer.longitude * predict_rs::consts::DEG_TO_RAD,
-        altitude: observer.altitude,
-        min_elevation: 0.0,
-    };
+/// Calcula la frecuencia de downlink (recepción en estación terrena)
+///
+/// # Arguments
+/// * `freq_tx_sat` - Frecuencia de transmisión del satélite en Hz
+/// * `range_rate` - Velocidad radial en m/s (positivo = alejándose, negativo = acercándose)
+///
+/// # Returns
+/// Frecuencia que debe sintonizar el receptor en Hz
+pub fn doppler_downlink(freq_tx_sat: f64, range_rate: f64) -> f64 {
+    let doppler_shift = -freq_tx_sat * (range_rate / SPEED_OF_LIGHT);
+    freq_tx_sat + doppler_shift
+}
 
-    let constants = sgp4::Constants::from_elements(elements)
-        .map_err(TrackerError::ElementsError)
-        .unwrap();
-
-    let oe = predict_rs::predict::ObserverElements {
-        observer: &observer,
-        elements,
-        constants: &constants,
-    };
-
-    let start_utc = from.timestamp() as u64;
-    let stop_utc = start_utc + window.as_secs();
-
-    let passes = predict_rs::observer::get_passes(&oe, start_utc as f64, stop_utc as f64)
-        .ok()
-        .unwrap();
-
-    let pass = passes.passes.into_iter().next().unwrap();
-
-    Some(Pass {
-        start: pass.aos.unwrap().time,
-        end: pass.los.unwrap().time,
-    })
+/// Calcula la frecuencia de uplink (transmisión desde estación terrena)
+///
+/// # Arguments
+/// * `freq_rx_sat` - Frecuencia de recepción del satélite en Hz
+/// * `range_rate` - Velocidad radial en m/s (positivo = alejándose, negativo = acercándose)
+///
+/// # Returns
+/// Frecuencia a la que debe transmitir la estación terrena en Hz
+pub fn doppler_uplink(freq_rx_sat: f64, range_rate: f64) -> f64 {
+    // Para uplink, necesitamos pre-compensar el Doppler
+    // Si el satélite se aleja (range_rate > 0), debemos transmitir a mayor frecuencia
+    // Si el satélite se acerca (range_rate < 0), debemos transmitir a menor frecuencia
+    let doppler_shift = freq_rx_sat * (range_rate / SPEED_OF_LIGHT);
+    freq_rx_sat + doppler_shift
 }

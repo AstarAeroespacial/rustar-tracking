@@ -15,7 +15,7 @@
 use chrono::{DateTime, Duration, Utc};
 use predict_rs::{observer::predict_observe_orbit, orbit::predict_orbit, predict::PredictObserver};
 use sgp4::{Constants, Elements};
-use tracking::doppler::calcular_doppler;
+use tracking::doppler_downlink;
 use tracking::tle_loader;
 
 /// Encuentra el próximo pase del satélite con elevación > elevación mínima
@@ -55,6 +55,16 @@ fn encontrar_proximo_pase(
 }
 
 /// Trackea un pase completo del satélite con corrección de Doppler
+#[derive(Debug)]
+#[allow(dead_code)]
+struct Observacion {
+    tiempo: DateTime<Utc>,
+    elevacion: f64,
+    azimut: f64,
+    doppler_hz: f64,
+    range_rate: f64,
+}
+
 fn trackear_pase(
     observer: &PredictObserver,
     elements: &Elements,
@@ -79,8 +89,9 @@ fn trackear_pase(
     println!("{}", "-".repeat(60));
 
     let mut current_time = aos;
-    let dt_secs = 10; // intervalo para calcular range_rate
     let update_interval = 5; // actualizar cada 5 segundos
+
+    let mut observaciones: Vec<Observacion> = Vec::new();
 
     while current_time <= los {
         // Obtener posición del satélite
@@ -90,6 +101,7 @@ fn trackear_pase(
 
         let elevation_deg = observation.elevation.to_degrees();
         let azimuth_deg = observation.azimuth.to_degrees();
+        let range_rate = observation.range_rate * 1000.0; // Convertir a m/s
 
         // Verificar que seguimos visible
         if elevation_deg < observer.min_elevation.to_degrees() {
@@ -103,39 +115,36 @@ fn trackear_pase(
             continue;
         }
 
-        // Calcular Doppler shift
-        if let Some(shift) = calcular_doppler(
-            observer,
-            elements,
-            constants,
-            freq_tx,
-            current_time,
-            dt_secs,
-        ) {
-            // CORRECCIÓN DE FRECUENCIA DEL RECEPTOR
-            let freq_rx = freq_tx + shift;
+        // Calcular Doppler usando la nueva función
+        let freq_rx = doppler_downlink(freq_tx, range_rate);
+        let doppler_hz = freq_rx - freq_tx;
 
-            println!(
-                "{:<10} | {:>7.2} {:>7.2} | {:>+11.2} {:>12.6}",
-                current_time.format("%H:%M:%S"),
-                elevation_deg,
-                azimuth_deg,
-                shift,
-                freq_rx / 1_000_000.0
-            );
-        } else {
-            println!(
-                "{:<10} | {:>7.2} {:>7.2} | [Error]",
-                current_time.format("%H:%M:%S"),
-                elevation_deg,
-                azimuth_deg
-            );
-        }
+        println!(
+            "{:<10} | {:>7.2} {:>7.2} | {:>11.2} {:>12.6}",
+            current_time.format("%H:%M:%S"),
+            elevation_deg,
+            azimuth_deg,
+            doppler_hz,
+            freq_rx / 1_000_000.0
+        );
+
+        // Crear y almacenar la observación
+        let observacion = Observacion {
+            tiempo: current_time,
+            elevacion: elevation_deg,
+            azimut: azimuth_deg,
+            doppler_hz,
+            range_rate,
+        };
+        observaciones.push(observacion);
 
         current_time += Duration::seconds(update_interval);
     }
 
     println!("\n✓ Pase completado\n");
+
+    // Mostrar todas las observaciones al final
+    println!("Observaciones completas: {:?}", observaciones);
 }
 
 fn main() {

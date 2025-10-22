@@ -1,11 +1,9 @@
+use crate::frequencies;
 use chrono::{DateTime, Duration, Utc};
 use predict_rs::{observer::predict_observe_orbit, orbit::predict_orbit, predict::PredictObserver};
 use sgp4::{Constants, Elements};
 use std::fs::File;
 use std::io::Write;
-
-use crate::doppler::calcular_doppler;
-use crate::frequencies;
 
 pub fn generar_comparacion(
     observer: &PredictObserver,
@@ -41,27 +39,25 @@ pub fn generar_comparacion(
             let rango = observation.range * 1000.0; // km a metros
             let range_rate = observation.range_rate * 1000.0; // km/s a m/s
 
-            if let Some(doppler) = calcular_doppler(observer, elements, constants, freq, cuando, 10)
-            {
-                writeln!(
-                    file,
-                    "{},{:.0},{:.2},{:.0}",
-                    cuando.to_rfc3339(),
-                    rango,
-                    range_rate,
-                    doppler
-                )?;
+            // Calcular Doppler usando range_rate
+            let doppler = -freq * (range_rate / 299_792_458.0); // SPEED_OF_LIGHT
 
-                puntos_validos += 1;
+            writeln!(
+                file,
+                "{},{:.0},{:.2},{:.0}",
+                cuando.to_rfc3339(),
+                rango,
+                range_rate,
+                doppler
+            )?;
 
-                // Mostrar progreso cada 10 puntos
-                if (minuto + 1) % 10 == 0 {
-                    print!(".");
-                    use std::io::{self, Write};
-                    io::stdout().flush().unwrap();
-                }
-            } else {
-                puntos_invalidos += 1;
+            puntos_validos += 1;
+
+            // Mostrar progreso cada 10 puntos
+            if (minuto + 1) % 10 == 0 {
+                print!(".");
+                use std::io::{self, Write};
+                io::stdout().flush().unwrap();
             }
         } else {
             puntos_invalidos += 1;

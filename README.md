@@ -1,42 +1,55 @@
-# Tracking con Corrección de Doppler
+# Tracking Satelital con Corrección de Doppler
 
-Todos los ejemplos descargan automáticamente TLEs actualizados desde CelesTrak.
+Sistema de tracking satelital en Rust con cálculo preciso de corrección Doppler para enlaces de radio.
 
-```bash
-# Ejemplo completo con predicción de pases y corrección de Doppler
-cargo run --example track_doppler
+## 📡 API Principal
+
+### Funciones de Doppler
+
+```rust
+use tracking::{doppler_downlink, doppler_uplink};
+
+// Downlink: Calcular frecuencia de recepción en estación terrena
+let freq_rx = doppler_downlink(freq_tx_sat, range_rate);
+
+// Uplink: Calcular frecuencia de transmisión desde estación terrena
+let freq_tx = doppler_uplink(freq_rx_sat, range_rate);
 ```
 
-Este ejemplo muestra:
+**Parámetros:**
 
--   🔍 Predicción automática de pases (AOS/LOS)
--   📡 Tracking en tiempo real con elevación y azimut
--   🎯 Corrección de frecuencia del receptor
--   📊 Tabla con Doppler shift y frecuencia RX a sintonizar
+-   `freq_tx_sat` / `freq_rx_sat`: Frecuencia del satélite en Hz
+-   `range_rate`: Velocidad radial en m/s (de `predict-rs`)
 
-## Validar ISS
+**Nota:** El `range_rate` se obtiene automáticamente del `Observation` struct:
+
+```rust
+let observation = tracker.track(Utc::now())?;
+let range_rate = observation.range_rate; // en m/s
+```
+
+## 🔬 Validación contra Skyfield
+
+### ISS
 
 ```bash
 cargo run --example comparar_con_skyfield       # Genera datos Rust
-python3 src/validacion_doppler/validar_iss.py   # Compara con Skyfield
+python3 src/validaciones/validar_iss.py         # Compara con Skyfield
 ```
 
-## Validar Otros Satélites
+**Resultado:** Diferencia promedio **13.06 Hz** (⚠️ ACEPTABLE)
+
+### Otros Satélites
 
 ```bash
 # 1. Generar datos Rust
 cargo run --example track_satelite
 
 # 2. Validar con Skyfield
-python3 src/validacion_doppler/validar_satelite.py
+python3 src/validaciones/validar_satelite.py
 ```
 
-## Validación de Cálculos
-
-```bash
-# Pruebas de Doppler con TLE actualizado
-cargo run --example validar_doppler
-```
+**Resultado (AO-91):** Diferencia promedio **9.42 Hz** (✅ BUENO)
 
 ## 📊 Resultados
 
@@ -44,43 +57,6 @@ Los resultados se guardan en:
 
 -   `validacion_doppler/iss/` - ISS
 -   `validacion_doppler/satelites/` - Otros satélites
-
-## 🎯 Satélites Disponibles
-
-| Satélite           | NORAD | Frecuencia  | Notas                      |
-| ------------------ | ----- | ----------- | -------------------------- |
-| **ISS**            | 25544 | 145.800 MHz | Referencia estable         |
-| **AO-91** (Fox-1B) | 43017 | 145.960 MHz | Muy estable, ideal Doppler |
-| **FO-29** (JAS-2)  | 24278 | 435.850 MHz | UHF, órbita excéntrica     |
-| **FUNCUBE-1**      | 39444 | 145.935 MHz | BPSK 1200 bps              |
-| **LILACSAT-2**     | 40069 | 437.200 MHz | UHF, ±3 kHz Doppler        |
-
-**Nota**: Las frecuencias se descargan automáticamente desde **SatNOGS DB** (base de datos comunitaria) o se usan valores locales como fallback.
-
-## Validaciones Realizadas
-
-### ISS (NORAD 25544)
-
--   **Órbita**: ~400 km, inclinación 51.6°
--   **Resultado**: Doppler < 2 Hz, Rango ~1 km
--   **Evaluación**: ✅ EXCELENTE
-
-### AO-91 / JAS-2 (NORAD 24278)
-
--   **Órbita**: ~1060 km, inclinación 98.5°, excéntrica (e=0.035)
--   **Frecuencia**: 145.960 MHz (VHF downlink)
--   **Resultado**: Doppler 1.22 Hz, Rango ~2.1 km
--   **Evaluación**: ✅ EXCELENTE
-
-## Precisión del Sistema
-
-### Doppler Shift
-
--   **Precisión**: < 10 Hz (típicamente 1-2 Hz)
--   **Evaluación**: Excelente para recepción automática de señales
--   **Método**: Diferencias finitas (10 segundos), igual que Skyfield
-
-**Validado contra**: Skyfield (implementación de referencia Python)
 
 ## 🔧 Dependencias
 
@@ -97,13 +73,6 @@ chrono = "0.4.41"        # Manejo de tiempo
 ```bash
 pip install skyfield pandas matplotlib
 ```
-
-## 📖 Cómo Funciona
-
-1. **SGP4**: Propaga la órbita del satélite usando TLE
-2. **Coordinate Transform**: Convierte ECI → Topocentric (observer frame)
-3. **Range Rate**: Calcula velocidad radial por diferencias finitas
-4. **Doppler**: Aplica fórmula: `shift = -freq × (range_rate / c)`
 
 ### Fórmula Doppler
 
@@ -128,8 +97,6 @@ let observer = PredictObserver {
     min_elevation: 0.0,
 };
 ```
-
-Modificar en los ejemplos según tu ubicación.
 
 ## 📝 Licencia
 
