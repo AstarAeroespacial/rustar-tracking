@@ -9,7 +9,7 @@ use predict_rs::{
     consts::{DEG_TO_RAD, RAD_TO_DEG},
     observer::{self, get_passes},
     orbit,
-    predict::{ObserverElements, PredictObserver},
+    predict::{ObserverElements, Passes, PredictObserver},
 };
 
 pub type Degrees = f64;
@@ -133,6 +133,22 @@ impl Tracker {
             start: pass.aos.unwrap().time,
             end: pass.los.unwrap().time,
         })
+    }
+
+    /// Predict all passes of the satellite over the ground station, starting from a given time and within a specified time window.
+    pub fn next_passes(&self, from: DateTime<Utc>, window: Duration) -> Option<Passes> {
+        let oe = ObserverElements {
+            observer: &self.observer,
+            elements: &self.elements,
+            constants: &self.constants,
+        };
+
+        let start_utc = from.timestamp() as u64;
+        let stop_utc = start_utc + window.as_secs();
+
+        let passes = get_passes(&oe, start_utc as f64, stop_utc as f64).ok()?;
+
+        Some(passes)
     }
 }
 
